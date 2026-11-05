@@ -20,7 +20,7 @@ except ImportError:
     HAS_BOOTSTRAP = False
 
 APP_NAME = "YouTube 下载器"
-APP_VERSION = "1.2.0"
+APP_VERSION = "1.3.0"
 
 # 资源路径（打包后兼容：优先从 exe 同目录找，找不到再从打包临时目录找）
 def resource_path(relative_path):
@@ -128,11 +128,11 @@ class DownloaderApp:
         main = ttk.Frame(self.root, padding=20)
         main.pack(fill=tk.BOTH, expand=True)
 
-        # 标题栏（左标题 + 右版本号/检查更新）
+        # 标题栏
         header = ttk.Frame(main)
         header.pack(fill=tk.X, pady=(0, 15))
 
-        title_label = ttk.Label(header, text="YouTube 视频下载器", font=("Microsoft YaHei UI", 16, "bold"))
+        title_label = ttk.Label(header, text="YouTube 视频下载器", font=("Microsoft YaHei UI", 17, "bold"))
         title_label.pack(side=tk.LEFT)
 
         version_label = ttk.Label(header, text=f"v{APP_VERSION}", foreground="#888", font=("Microsoft YaHei UI", 10))
@@ -146,8 +146,8 @@ class DownloaderApp:
         url_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.url_var = tk.StringVar(value="粘贴 YouTube / B站 / 全网视频链接...")
-        self.url_entry = ttk.Entry(url_frame, textvariable=self.url_var, font=("Microsoft YaHei UI", 11))
-        self.url_entry.pack(fill=tk.X, ipady=5)
+        self.url_entry = ttk.Entry(url_frame, textvariable=self.url_var, font=("Microsoft YaHei UI", 12))
+        self.url_entry.pack(fill=tk.X, ipady=6)
         self.url_entry.bind("<FocusIn>", lambda e: self._clear_placeholder())
 
         # 选项区
@@ -158,19 +158,27 @@ class DownloaderApp:
         format_row = ttk.Frame(opt_frame)
         format_row.pack(fill=tk.X, pady=(0, 8))
 
-        ttk.Label(format_row, text="下载格式：").pack(side=tk.LEFT)
+        ttk.Label(format_row, text="下载格式：", font=("Microsoft YaHei UI", 11)).pack(side=tk.LEFT)
         self.format_var = tk.StringVar(value="mp3")
         ttk.Radiobutton(format_row, text="MP3 音频", variable=self.format_var, value="mp3", command=self._on_format_change).pack(side=tk.LEFT, padx=10)
-        ttk.Radiobutton(format_row, text="MP4 视频（最高画质）", variable=self.format_var, value="mp4", command=self._on_format_change).pack(side=tk.LEFT, padx=10)
+        ttk.Radiobutton(format_row, text="MP4 视频", variable=self.format_var, value="mp4", command=self._on_format_change).pack(side=tk.LEFT, padx=(10, 20))
+
+        # 分辨率选择（仅 mp4 显示）
+        ttk.Label(format_row, text="分辨率：", font=("Microsoft YaHei UI", 11)).pack(side=tk.LEFT)
+        self.resolution_var = tk.StringVar(value="最高画质")
+        self.resolution_combo = ttk.Combobox(format_row, textvariable=self.resolution_var,
+            values=["最高画质", "2160p (4K)", "1440p (2K)", "1080p", "720p", "480p"],
+            state="readonly", width=14, font=("Microsoft YaHei UI", 10))
+        self.resolution_combo.pack(side=tk.LEFT, padx=(5, 0))
 
         # 输出路径
         path_row = ttk.Frame(opt_frame)
         path_row.pack(fill=tk.X, pady=(0, 5))
 
-        ttk.Label(path_row, text="保存位置：").pack(side=tk.LEFT)
+        ttk.Label(path_row, text="保存位置：", font=("Microsoft YaHei UI", 11)).pack(side=tk.LEFT)
         self.path_var = tk.StringVar(value="G:\\模型")
-        path_entry = ttk.Entry(path_row, textvariable=self.path_var)
-        path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5), ipady=3)
+        path_entry = ttk.Entry(path_row, textvariable=self.path_var, font=("Microsoft YaHei UI", 11))
+        path_entry.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 5), ipady=4)
         browse_btn = ttk.Button(path_row, text="浏览...", command=self._browse_folder)
         browse_btn.pack(side=tk.RIGHT)
 
@@ -182,36 +190,84 @@ class DownloaderApp:
         self.download_btn.pack(side=tk.LEFT, padx=(0, 10))
 
         self.cancel_btn = ttk.Button(btn_frame, text="取消", command=self._cancel_download, state=tk.DISABLED)
-        self.cancel_btn.pack(side=tk.LEFT)
+        self.cancel_btn.pack(side=tk.LEFT, padx=(0, 10))
 
-        # 进度条
+        self.open_folder_btn = ttk.Button(btn_frame, text="打开文件夹", command=self._open_output_folder, state=tk.DISABLED)
+        self.open_folder_btn.pack(side=tk.LEFT)
+
+        # 自定义进度条（Canvas 画绿色渐变 + 百分比）
         progress_frame = ttk.LabelFrame(main, text="下载进度", padding=10)
         progress_frame.pack(fill=tk.X, pady=(0, 10))
 
+        self.progress_canvas = tk.Canvas(progress_frame, height=36, bg="#2d2d30", highlightthickness=0)
+        self.progress_canvas.pack(fill=tk.X)
         self.progress_var = tk.DoubleVar(value=0)
-        self.progress_bar = ttk.Progressbar(progress_frame, variable=self.progress_var, maximum=100, style="success.Horizontal.TProgressbar")
-        self.progress_bar.pack(fill=tk.X, ipady=3)
 
         self.status_var = tk.StringVar(value="就绪")
-        status_label = ttk.Label(progress_frame, textvariable=self.status_var, foreground="#aaa")
+        status_label = ttk.Label(progress_frame, textvariable=self.status_var, foreground="#aaa", font=("Microsoft YaHei UI", 10))
         status_label.pack(anchor=tk.W, pady=(5, 0))
 
         # 日志区
         log_frame = ttk.LabelFrame(main, text="日志", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.log_text = tk.Text(log_frame, height=8, wrap=tk.WORD, font=("Consolas", 9), state=tk.DISABLED, bg="#1e1e1e", fg="#d4d4d4", insertbackground="#d4d4d4")
+        self.log_text = tk.Text(log_frame, height=7, wrap=tk.WORD, font=("Cascadia Code", 10), state=tk.DISABLED,
+                                bg="#1e1e1e", fg="#d4d4d4", insertbackground="#d4d4d4")
         scrollbar = ttk.Scrollbar(log_frame, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+
+        # 初始绘制进度条背景
+        self._draw_progress(0)
 
     def _clear_placeholder(self):
         if self.url_var.get() == "粘贴 YouTube / B站 / 全网视频链接...":
             self.url_var.set("")
 
     def _on_format_change(self):
-        pass
+        # mp3 模式下禁用分辨率选择
+        if self.format_var.get() == "mp3":
+            self.resolution_combo.configure(state="disabled")
+        else:
+            self.resolution_combo.configure(state="readonly")
+
+    def _draw_progress(self, pct):
+        """画绿色渐变进度条 + 百分比文字"""
+        self.progress_canvas.delete("all")
+        w = self.progress_canvas.winfo_width()
+        if w < 10:
+            w = 600
+        h = 36
+        fill_w = int(w * pct / 100)
+
+        # 背景
+        self.progress_canvas.create_rectangle(0, 0, w, h, fill="#3c3c3f", outline="")
+
+        # 绿色渐变填充（用多段矩形模拟渐变）
+        if fill_w > 0:
+            steps = 20
+            for i in range(steps):
+                x0 = int(fill_w * i / steps)
+                x1 = int(fill_w * (i + 1) / steps)
+                # 从浅绿到深绿渐变
+                r = int(60 + i * 3)
+                g = int(180 + i * 2)
+                b = int(80 - i * 2)
+                color = f"#{r:02x}{g:02x}{b:02x}"
+                self.progress_canvas.create_rectangle(x0, 0, x1, h, fill=color, outline="")
+
+        # 百分比文字
+        text = f"{pct:.1f}%" if pct > 0 else ""
+        if text:
+            self.progress_canvas.create_text(w // 2, h // 2, text=text, fill="white",
+                                            font=("Microsoft YaHei UI", 12, "bold"))
+
+    def _open_output_folder(self):
+        """打开输出文件夹"""
+        folder = self.path_var.get()
+        if os.path.isdir(folder):
+            os.startfile(folder)
 
     def _browse_folder(self):
         folder = filedialog.askdirectory(initialdir=self.path_var.get())
@@ -230,34 +286,35 @@ class DownloaderApp:
         ytdlp = resource_path("yt-dlp.exe")
         ffmpeg_dir = resource_path("ffmpeg")
 
-        # 备用：系统 PATH 里找
         if not os.path.exists(ytdlp):
             ytdlp = "yt-dlp"
 
-        cmd = [ytdlp, "--no-playlist", "--newline"]
+        cmd = [ytdlp, "--no-playlist", "--newline", "--concurrent-fragments", "5"]
 
         if self.format_var.get() == "mp3":
-            # 提取音频，转 mp3
-            cmd.extend([
-                "-x", "--audio-format", "mp3",
-                "--audio-quality", "0",
-            ])
+            cmd.extend(["-x", "--audio-format", "mp3", "--audio-quality", "0"])
         else:
-            # 视频：最高画质 + 合并音频
-            cmd.extend([
-                "-f", "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best",
-                "--merge-output-format", "mp4",
-            ])
+            # 根据分辨率选择格式
+            res = self.resolution_var.get()
+            if res == "2160p (4K)":
+                fmt = "bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]/best"
+            elif res == "1440p (2K)":
+                fmt = "bestvideo[height<=1440][ext=mp4]+bestaudio[ext=m4a]/best[height<=1440]/best"
+            elif res == "1080p":
+                fmt = "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]/best"
+            elif res == "720p":
+                fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best"
+            elif res == "480p":
+                fmt = "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480]/best"
+            else:
+                fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+            cmd.extend(["-f", fmt, "--merge-output-format", "mp4"])
 
-        # ffmpeg 路径
         if os.path.exists(ffmpeg_dir):
             cmd.extend(["--ffmpeg-location", ffmpeg_dir])
 
-        # 输出模板
         out_path = os.path.join(self.path_var.get(), "%(title)s.%(ext)s")
         cmd.extend(["-o", out_path])
-
-        # URL
         cmd.append(url)
 
         return cmd
@@ -275,7 +332,8 @@ class DownloaderApp:
         self.is_downloading = True
         self.download_btn.configure(state=tk.DISABLED)
         self.cancel_btn.configure(state=tk.NORMAL)
-        self.progress_var.set(0)
+        self.open_folder_btn.configure(state=tk.DISABLED)
+        self._draw_progress(0)
         self.status_var.set("正在下载...")
         self._log(f"开始下载: {url}")
         self._log(f"格式: {self.format_var.get().upper()}, 保存到: {self.path_var.get()}")
@@ -310,15 +368,16 @@ class DownloaderApp:
                     try:
                         pct_str = line.split("%")[0].split()[-1]
                         pct = float(pct_str)
-                        self.progress_var.set(pct)
+                        self._draw_progress(pct)
                     except (ValueError, IndexError):
                         pass
 
             self.process.wait()
 
             if self.process.returncode == 0:
-                self.progress_var.set(100)
+                self._draw_progress(100)
                 self.status_var.set("下载完成！")
+                self.open_folder_btn.configure(state=tk.NORMAL)
                 self._log("=== 下载完成 ===")
                 messagebox.showinfo("完成", f"下载完成！\n文件已保存到:\n{self.path_var.get()}")
             else:
