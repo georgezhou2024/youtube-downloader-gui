@@ -26,7 +26,7 @@ except ImportError:
     HAS_BOOTSTRAP = False
 
 APP_NAME = "YouTube 下载器"
-APP_VERSION = "1.6.0"
+APP_VERSION = "1.6.1"
 
 # 资源路径（打包后兼容：优先从 exe 同目录找，找不到再从打包临时目录找）
 def resource_path(relative_path):
@@ -56,8 +56,7 @@ class DownloaderApp:
         if os.path.exists(icon_path):
             self.root.iconbitmap(icon_path)
 
-        # 背景壁纸 Label（放在标题栏区域）
-        self.bg_label = tk.Label(self.root, bg="#1e1e1e")
+        # 背景壁纸（Canvas 层）
         self.bg_photo = None
 
         # 下载进程
@@ -137,12 +136,21 @@ class DownloaderApp:
             messagebox.showerror("检查更新", f"检查失败: {e}")
 
     def _build_ui(self):
-        # 主容器
-        main = ttk.Frame(self.root, padding=20)
-        main.pack(fill=tk.BOTH, expand=True)
+        # 背景 Canvas（壁纸层）
+        self.bg_canvas = tk.Canvas(self.root, highlightthickness=0, bg="#1e1e1e")
+        self.bg_canvas.pack(fill=tk.BOTH, expand=True)
+
+        # 主容器 Frame（放在 Canvas 上，深色面板）
+        self.main_frame = ttk.Frame(self.bg_canvas, padding=20)
+        self.bg_canvas.create_window((0, 0), window=self.main_frame, anchor="nw")
+
+        # 让 main 跟随 Canvas 大小
+        def on_resize(e):
+            self.bg_canvas.itemconfig(1, width=e.width)
+        self.main_frame.bind("<Configure>", on_resize)
 
         # 标题栏
-        header = ttk.Frame(main)
+        header = ttk.Frame(self.main_frame)
         header.pack(fill=tk.X, pady=(0, 15))
 
         title_label = ttk.Label(header, text="YouTube 视频下载器", font=("Microsoft YaHei UI", 17, "bold"))
@@ -162,7 +170,7 @@ class DownloaderApp:
         check_btn.pack(side=tk.RIGHT, padx=(0, 10))
 
         # URL 输入区
-        url_frame = ttk.LabelFrame(main, text="视频链接", padding=10)
+        url_frame = ttk.LabelFrame(self.main_frame, text="视频链接", padding=10)
         url_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.url_var = tk.StringVar(value="粘贴 YouTube / B站 / 全网视频链接...")
@@ -171,7 +179,7 @@ class DownloaderApp:
         self.url_entry.bind("<FocusIn>", lambda e: self._clear_placeholder())
 
         # 选项区
-        opt_frame = ttk.LabelFrame(main, text="下载选项", padding=10)
+        opt_frame = ttk.LabelFrame(self.main_frame, text="下载选项", padding=10)
         opt_frame.pack(fill=tk.X, pady=(0, 10))
 
         # 格式选择
@@ -195,7 +203,7 @@ class DownloaderApp:
         browse_btn.pack(side=tk.RIGHT)
 
         # 按钮区
-        btn_frame = ttk.Frame(main)
+        btn_frame = ttk.Frame(self.main_frame)
         btn_frame.pack(fill=tk.X, pady=(5, 10))
 
         self.download_btn = ttk.Button(btn_frame, text="开始下载", command=self._start_download, style="Accent.TButton")
@@ -208,7 +216,7 @@ class DownloaderApp:
         self.open_folder_btn.pack(side=tk.LEFT)
 
         # 自定义进度条（Canvas 画绿色渐变 + 百分比）
-        progress_frame = ttk.LabelFrame(main, text="下载进度", padding=10)
+        progress_frame = ttk.LabelFrame(self.main_frame, text="下载进度", padding=10)
         progress_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.progress_canvas = tk.Canvas(progress_frame, height=36, bg="#2d2d30", highlightthickness=0)
@@ -220,7 +228,7 @@ class DownloaderApp:
         status_label.pack(anchor=tk.W, pady=(5, 0))
 
         # 日志区
-        log_frame = ttk.LabelFrame(main, text="日志", padding=10)
+        log_frame = ttk.LabelFrame(self.main_frame, text="日志", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True)
 
         self.log_text = tk.Text(log_frame, height=7, wrap=tk.WORD, font=("Cascadia Code", 10), state=tk.DISABLED,
@@ -283,25 +291,36 @@ class DownloaderApp:
         """切换主题皮肤"""
         theme_name = self.theme_var.get()
 
-        # ttkbootstrap 主题映射
-        theme_map = {
-            "磨砂黑": "darkly",
-            "蓝橙渐变": "cosmo",
-            "橙光": "pulse",
-            "点阵黑": "cyborg",
-            "白色": "litera",
+        # 壁纸映射
+        wallpaper_map = {
+            "磨砂黑": "dark_matte.jpg",
+            "蓝橙渐变": "blue_orange.jpg",
+            "橙光": "orange_glow.jpg",
+            "点阵黑": "dark_dots.jpg",
         }
 
-        ttk_theme = theme_map.get(theme_name, "darkly")
-
-        # 用 ttkbootstrap 切换主题（运行时切换）
-        if HAS_BOOTSTRAP:
-            try:
-                from ttkbootstrap import Style
-                style = Style()
-                style.theme_use(ttk_theme)
-            except Exception as e:
-                print(f"主题切换失败: {e}")
+        # 加载壁纸背景到 Canvas
+        wallpaper_file = wallpaper_map.get(theme_name)
+        if wallpaper_file and HAS_PIL:
+            wp_path = resource_path(os.path.join("wallpapers", wallpaper_file))
+            if os.path.exists(wp_path):
+                def load_wp():
+                    w = self.root.winfo_width()
+                    h = self.root.winfo_height()
+                    if w < 10:
+                        w, h = 680, 520
+                    img = Image.open(wp_path)
+                    img = img.resize((w, h), Image.LANCZOS)
+                    self.bg_photo = ImageTk.PhotoImage(img)
+                    # 画合成后的背景
+                    self.bg_canvas.delete("all")
+                    self.bg_canvas.create_image(0, 0, anchor="nw", image=self.bg_photo)
+                    # 把 main 窗口放在最上层
+                    self.bg_canvas.create_window((0, 0), window=self.main_frame, anchor="nw")
+                self.root.after(100, load_wp)
+        else:
+            self.bg_canvas.delete("all")
+            self.bg_canvas.create_window((0, 0), window=self.main_frame, anchor="nw")
 
         # 更新进度条
         self._draw_progress(self.progress_var.get())
