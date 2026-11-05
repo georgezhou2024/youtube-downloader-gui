@@ -20,7 +20,7 @@ except ImportError:
     HAS_BOOTSTRAP = False
 
 APP_NAME = "YouTube 下载器"
-APP_VERSION = "1.4.0"
+APP_VERSION = "1.5.0"
 
 # 资源路径（打包后兼容：优先从 exe 同目录找，找不到再从打包临时目录找）
 def resource_path(relative_path):
@@ -168,15 +168,7 @@ class DownloaderApp:
         ttk.Label(format_row, text="下载格式：", font=("Microsoft YaHei UI", 11)).pack(side=tk.LEFT)
         self.format_var = tk.StringVar(value="mp3")
         ttk.Radiobutton(format_row, text="MP3 音频", variable=self.format_var, value="mp3", command=self._on_format_change).pack(side=tk.LEFT, padx=10)
-        ttk.Radiobutton(format_row, text="MP4 视频", variable=self.format_var, value="mp4", command=self._on_format_change).pack(side=tk.LEFT, padx=(10, 20))
-
-        # 分辨率选择（仅 mp4 显示）
-        ttk.Label(format_row, text="分辨率：", font=("Microsoft YaHei UI", 11)).pack(side=tk.LEFT)
-        self.resolution_var = tk.StringVar(value="最高画质")
-        self.resolution_combo = ttk.Combobox(format_row, textvariable=self.resolution_var,
-            values=["最高画质", "2160p (4K)", "1440p (2K)", "1080p", "720p", "480p"],
-            state="readonly", width=14, font=("Microsoft YaHei UI", 10))
-        self.resolution_combo.pack(side=tk.LEFT, padx=(5, 0))
+        ttk.Radiobutton(format_row, text="MP4 视频", variable=self.format_var, value="mp4", command=self._on_format_change).pack(side=tk.LEFT, padx=(10, 0))
 
         # 输出路径
         path_row = ttk.Frame(opt_frame)
@@ -399,60 +391,93 @@ class DownloaderApp:
             self.root.after(0, lambda: messagebox.showerror("错误", f"获取视频信息失败: {e}"))
 
     def _show_quality_dialog(self, url, title, duration, formats):
-        """显示分辨率选择窗口"""
+        """显示分辨率选择窗口（卡片式设计）"""
         dlg = tk.Toplevel(self.root)
         dlg.title("选择分辨率")
-        dlg.geometry("520x560")
+        dlg.geometry("560x640")
         dlg.transient(self.root)
         dlg.grab_set()
+        dlg.configure(bg="#f5f5f7")
 
-        # 标题
-        ttk.Label(dlg, text=title, font=("Microsoft YaHei UI", 12, "bold"), wraplength=480).pack(anchor=tk.W, padx=15, pady=(15, 5))
+        # 顶部标题区
+        header = tk.Frame(dlg, bg="#f5f5f7")
+        header.pack(fill="x", padx=20, pady=(15, 10))
+
+        tk.Label(header, text=title, font=("Microsoft YaHei UI", 14, "bold"), bg="#f5f5f7", wraplength=500, justify="left").pack(anchor="w")
         mins = duration // 60 if duration else 0
         secs = duration % 60 if duration else 0
-        ttk.Label(dlg, text=f"时长: {mins}:{secs:02d}", foreground="#888").pack(anchor=tk.W, padx=15)
+        tk.Label(header, text=f"Links TV · {mins}:{secs:02d}", font=("Microsoft YaHei UI", 10), bg="#f5f5f7", fg="#888").pack(anchor="w", pady=(2, 0))
 
-        # 滚动列表
-        canvas = tk.Canvas(dlg, bg="#2d2d30", highlightthickness=0)
-        scrollbar = ttk.Scrollbar(dlg, orient="vertical", command=canvas.yview)
-        frame = ttk.Frame(canvas)
-        frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
-        canvas.create_window((0, 0), window=frame, anchor="nw")
+        # 滚动列表区域
+        list_frame = tk.Frame(dlg, bg="#f5f5f7")
+        list_frame.pack(fill="both", expand=True, padx=15, pady=(0, 10))
+
+        canvas = tk.Canvas(list_frame, bg="#f5f5f7", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(list_frame, orient="vertical", command=canvas.yview)
+        inner = tk.Frame(canvas, bg="#f5f5f7")
+        inner.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=inner, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
-        canvas.pack(side="left", fill="both", expand=True, padx=(15, 0), pady=10)
+        canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
         selected = tk.StringVar(value="best")
 
-        # 最高画质选项
-        rb = ttk.Radiobutton(frame, text="最高画质（自动合并音视频）", variable=selected, value="best")
-        rb.pack(anchor=tk.W, pady=5)
-        ttk.Label(frame, text="推荐 · bestvideo+bestaudio", foreground="#888").pack(anchor=tk.W, padx=20)
+        # 最高画质推荐卡片
+        best_card = tk.Frame(inner, bg="#e8f0fe", relief="solid", bd=1)
+        best_card.pack(fill="x", pady=4, padx=2)
+        tk.Radiobutton(best_card, text="", variable=selected, value="best", bg="#e8f0fe").pack(side="left", padx=(10, 5))
+        tk.Label(best_card, text="最高画质（自动合并音视频）", font=("Microsoft YaHei UI", 11, "bold"), bg="#e8f0fe").pack(side="left", pady=10)
+        tk.Label(best_card, text="推荐", font=("Microsoft YaHei UI", 9), bg="#e8f0fe", fg="#1a73e8").pack(side="left", padx=(8, 0))
+        tk.Label(best_card, text="推荐 · bestvideo+bestaudio", font=("Microsoft YaHei UI", 9), bg="#e8f0fe", fg="#888").pack(side="bottom", anchor="w", padx=(35, 0), pady=(0, 8))
 
-        ttk.Separator(frame).pack(fill="x", pady=8)
+        # 过滤掉 mhtml 等无效格式，只保留 mp4/webm
+        valid_formats = [f for f in formats if f["ext"] in ("mp4", "webm")]
+        valid_formats.sort(key=lambda x: x["height"], reverse=True)
 
-        # 各分辨率选项
-        max_h = max(f["height"] for f in formats) if formats else 1080
-        for f in formats:
+        for f in valid_formats:
             h = f["height"]
             size_mb = f["size"] / 1024 / 1024 if f["size"] else 0
-            size_str = f"{size_mb:.1f} MB" if size_mb < 1024 else f"{size_mb/1024:.2f} GB"
-            text = f"{h}p"
-            sub = f"{f['ext']} · {f['vcodec']} · {size_str}"
-            rb = ttk.Radiobutton(frame, text=text, variable=selected, value=str(h))
-            rb.pack(anchor=tk.W, pady=3)
-            ttk.Label(frame, text=sub, foreground="#888").pack(anchor=tk.W, padx=20)
+            if size_mb >= 1024:
+                size_str = f"{size_mb/1024:.1f} GB"
+            elif size_mb > 0:
+                size_str = f"{size_mb:.1f} MB"
+            else:
+                size_str = "—"
+
+            fps = f.get("fps", 30)
+            codec = f["vcodec"]
+            codec_short = codec[:12]
+
+            card = tk.Frame(inner, bg="white", relief="solid", bd=1)
+            card.pack(fill="x", pady=3, padx=2)
+
+            tk.Radiobutton(card, text="", variable=selected, value=str(h), bg="white").pack(side="left", padx=(10, 8), pady=10)
+            text_frame = tk.Frame(card, bg="white")
+            text_frame.pack(side="left", fill="x", expand=True)
+            tk.Label(text_frame, text=f"{h}p", font=("Microsoft YaHei UI", 11, "bold"), bg="white").pack(anchor="w", pady=(8, 0))
+            tk.Label(text_frame, text=f"{f['ext']} · {codec_short} · {fps}fps", font=("Microsoft YaHei UI", 9), bg="white", fg="#888").pack(anchor="w", pady=(0, 8))
+
+            tk.Label(card, text=size_str, font=("Microsoft YaHei UI", 11), bg="white", fg="#1a73e8").pack(side="right", padx=15, pady=10)
 
         # 仅音频
-        ttk.Separator(frame).pack(fill="x", pady=8)
-        ttk.Radiobutton(frame, text="仅音频 (MP3)", variable=selected, value="audio").pack(anchor=tk.W, pady=3)
+        audio_card = tk.Frame(inner, bg="white", relief="solid", bd=1)
+        audio_card.pack(fill="x", pady=3, padx=2)
+        tk.Radiobutton(audio_card, text="", variable=selected, value="audio", bg="white").pack(side="left", padx=(10, 8), pady=10)
+        tk.Label(audio_card, text="仅音频", font=("Microsoft YaHei UI", 11, "bold"), bg="white").pack(side="left", pady=10)
+        tk.Label(audio_card, text="音频", font=("Microsoft YaHei UI", 9), bg="#e8f0fe", fg="#1a73e8").pack(side="left", padx=(8, 0))
 
-        # 底部按钮
-        btn_frame = ttk.Frame(dlg)
-        btn_frame.pack(fill="x", padx=15, pady=10)
-        ttk.Button(btn_frame, text="取消", command=dlg.destroy).pack(side="right", padx=(5, 0))
-        ttk.Button(btn_frame, text="下载", style="Accent.TButton",
-                   command=lambda: self._on_quality_selected(dlg, url, selected.get())).pack(side="right")
+        # 底部保存路径 + 按钮
+        bottom = tk.Frame(dlg, bg="#f5f5f7")
+        bottom.pack(fill="x", padx=20, pady=(0, 15))
+
+        tk.Label(bottom, text=f"保存到: {self.path_var.get()}", font=("Microsoft YaHei UI", 10), bg="#f5f5f7", fg="#666").pack(side="left")
+
+        tk.Button(bottom, text="下载", font=("Microsoft YaHei UI", 10, "bold"), bg="#1a73e8", fg="white",
+                  relief="flat", padx=20, pady=5, cursor="hand2",
+                  command=lambda: self._on_quality_selected(dlg, url, selected.get())).pack(side="right", padx=(8, 0))
+        tk.Button(bottom, text="取消", font=("Microsoft YaHei UI", 10), bg="white", relief="solid", bd=1,
+                  padx=15, pady=5, cursor="hand2", command=dlg.destroy).pack(side="right")
 
     def _on_quality_selected(self, dlg, url, quality):
         dlg.destroy()
