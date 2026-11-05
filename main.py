@@ -12,6 +12,12 @@ import webbrowser
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
+try:
+    from PIL import Image, ImageTk
+    HAS_PIL = True
+except ImportError:
+    HAS_PIL = False
+
 # 尝试导入 ttkbootstrap，没有就用标准 ttk
 try:
     from ttkbootstrap import Style
@@ -20,7 +26,7 @@ except ImportError:
     HAS_BOOTSTRAP = False
 
 APP_NAME = "YouTube 下载器"
-APP_VERSION = "1.5.0"
+APP_VERSION = "1.6.0"
 
 # 资源路径（打包后兼容：优先从 exe 同目录找，找不到再从打包临时目录找）
 def resource_path(relative_path):
@@ -50,11 +56,18 @@ class DownloaderApp:
         if os.path.exists(icon_path):
             self.root.iconbitmap(icon_path)
 
+        # 背景壁纸 Label
+        self.bg_label = tk.Label(self.root, bg="#1e1e1e")
+        self.bg_photo = None
+
         # 下载进程
         self.process = None
         self.is_downloading = False
 
         self._build_ui()
+
+        # 初始化背景壁纸
+        self._switch_theme()
 
         # 启动后台检查更新
         threading.Thread(target=self._check_update, daemon=True).start()
@@ -139,9 +152,9 @@ class DownloaderApp:
         version_label.pack(side=tk.RIGHT, padx=(5, 0))
 
         ttk.Label(header, text="皮肤：").pack(side=tk.RIGHT, padx=(0, 3))
-        self.theme_var = tk.StringVar(value="暗黑")
+        self.theme_var = tk.StringVar(value="磨砂黑")
         theme_combo = ttk.Combobox(header, textvariable=self.theme_var,
-            values=["暗黑", "白色", "蓝色", "绿色", "红色"], state="readonly", width=6, font=("Microsoft YaHei UI", 9))
+            values=["磨砂黑", "蓝橙渐变", "橙光", "点阵黑", "白色"], state="readonly", width=10, font=("Microsoft YaHei UI", 9))
         theme_combo.pack(side=tk.RIGHT, padx=(0, 10))
         theme_combo.bind("<<ComboboxSelected>>", lambda e: self._switch_theme())
 
@@ -268,19 +281,47 @@ class DownloaderApp:
 
     def _switch_theme(self):
         """切换主题皮肤"""
-        theme_map = {
-            "暗黑": "darkly",
-            "白色": "litera",
-            "蓝色": "cosmo",
-            "绿色": "flatly",
-            "红色": "pulse"
+        # 壁纸映射
+        wallpaper_map = {
+            "磨砂黑": "dark_matte.jpg",
+            "蓝橙渐变": "blue_orange.jpg",
+            "橙光": "orange_glow.jpg",
+            "点阵黑": "dark_dots.jpg",
         }
-        theme = theme_map.get(self.theme_var.get(), "darkly")
+
+        theme_name = self.theme_var.get()
+        wallpaper_file = wallpaper_map.get(theme_name)
+
+        # 先设置 ttkbootstrap 主题（深色系）
         if HAS_BOOTSTRAP:
             from ttkbootstrap import Style
-            style = Style(theme=theme)
-            # 更新进度条颜色
-            self._draw_progress(self.progress_var.get())
+            if theme_name == "白色":
+                style = Style(theme="litera")
+            else:
+                style = Style(theme="darkly")
+
+        # 加载壁纸背景
+        if wallpaper_file and HAS_PIL:
+            wp_path = resource_path(os.path.join("wallpapers", wallpaper_file))
+            if os.path.exists(wp_path):
+                img = Image.open(wp_path)
+                # 按窗口大小缩放，保持比例
+                w = self.root.winfo_width()
+                h = self.root.winfo_height()
+                if w < 10:
+                    w, h = 800, 600
+                img = img.resize((w, h), Image.LANCZOS)
+                self.bg_photo = ImageTk.PhotoImage(img)
+                self.bg_label.configure(image=self.bg_photo)
+                self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
+                self.bg_label.lower()  # 放在最底层
+            else:
+                self.bg_label.place_forget()
+        else:
+            self.bg_label.place_forget()
+
+        # 更新进度条
+        self._draw_progress(self.progress_var.get())
 
     def _open_output_folder(self):
         """打开输出文件夹"""
