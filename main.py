@@ -6,6 +6,9 @@ import os
 import sys
 import threading
 import subprocess
+import urllib.request
+import json
+import webbrowser
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
 
@@ -17,7 +20,7 @@ except ImportError:
     HAS_BOOTSTRAP = False
 
 APP_NAME = "YouTube 下载器"
-APP_VERSION = "1.0.0"
+APP_VERSION = "1.1.0"
 
 # 资源路径（打包后兼容：优先从 exe 同目录找，找不到再从打包临时目录找）
 def resource_path(relative_path):
@@ -52,6 +55,47 @@ class DownloaderApp:
         self.is_downloading = False
 
         self._build_ui()
+
+        # 启动后台检查更新
+        threading.Thread(target=self._check_update, daemon=True).start()
+
+    def _check_update(self):
+        """后台检查 GitHub 最新版本"""
+        try:
+            api_url = "https://api.github.com/repos/georgezhou2024/youtube-downloader-gui/releases/latest"
+            req = urllib.request.Request(api_url, headers={"User-Agent": "YouTube-Downloader"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode())
+            latest_version = data.get("tag_name", "").lstrip("v")
+            release_url = data.get("html_url", "")
+
+            if self._compare_version(latest_version, APP_VERSION) > 0:
+                self.root.after(0, lambda: self._show_update_dialog(latest_version, release_url))
+        except Exception:
+            pass  # 网络错误静默忽略
+
+    def _compare_version(self, v1, v2):
+        """比较版本号，v1>v2 返回 1，相等返回 0，v1<v2 返回 -1"""
+        try:
+            a = [int(x) for x in v1.split(".")]
+            b = [int(x) for x in v2.split(".")]
+            for i in range(max(len(a), len(b))):
+                ai = a[i] if i < len(a) else 0
+                bi = b[i] if i < len(b) else 0
+                if ai > bi: return 1
+                if ai < bi: return -1
+            return 0
+        except Exception:
+            return 0
+
+    def _show_update_dialog(self, latest_version, release_url):
+        """显示更新提示"""
+        result = messagebox.askyesno(
+            "发现新版本",
+            f"当前版本: v{APP_VERSION}\n最新版本: v{latest_version}\n\n是否前往下载？"
+        )
+        if result:
+            webbrowser.open(release_url)
 
     def _build_ui(self):
         # 主容器
