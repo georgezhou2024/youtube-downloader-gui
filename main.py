@@ -56,7 +56,7 @@ class DownloaderApp:
         if os.path.exists(icon_path):
             self.root.iconbitmap(icon_path)
 
-        # 背景壁纸 Label
+        # 背景壁纸 Label（放在标题栏区域）
         self.bg_label = tk.Label(self.root, bg="#1e1e1e")
         self.bg_photo = None
 
@@ -281,44 +281,27 @@ class DownloaderApp:
 
     def _switch_theme(self):
         """切换主题皮肤"""
-        # 壁纸映射
-        wallpaper_map = {
-            "磨砂黑": "dark_matte.jpg",
-            "蓝橙渐变": "blue_orange.jpg",
-            "橙光": "orange_glow.jpg",
-            "点阵黑": "dark_dots.jpg",
+        theme_name = self.theme_var.get()
+
+        # ttkbootstrap 主题映射
+        theme_map = {
+            "磨砂黑": "darkly",
+            "蓝橙渐变": "cosmo",
+            "橙光": "pulse",
+            "点阵黑": "cyborg",
+            "白色": "litera",
         }
 
-        theme_name = self.theme_var.get()
-        wallpaper_file = wallpaper_map.get(theme_name)
+        ttk_theme = theme_map.get(theme_name, "darkly")
 
-        # 先设置 ttkbootstrap 主题（深色系）
+        # 用 ttkbootstrap 切换主题（运行时切换）
         if HAS_BOOTSTRAP:
-            from ttkbootstrap import Style
-            if theme_name == "白色":
-                style = Style(theme="litera")
-            else:
-                style = Style(theme="darkly")
-
-        # 加载壁纸背景
-        if wallpaper_file and HAS_PIL:
-            wp_path = resource_path(os.path.join("wallpapers", wallpaper_file))
-            if os.path.exists(wp_path):
-                img = Image.open(wp_path)
-                # 按窗口大小缩放，保持比例
-                w = self.root.winfo_width()
-                h = self.root.winfo_height()
-                if w < 10:
-                    w, h = 800, 600
-                img = img.resize((w, h), Image.LANCZOS)
-                self.bg_photo = ImageTk.PhotoImage(img)
-                self.bg_label.configure(image=self.bg_photo)
-                self.bg_label.place(x=0, y=0, relwidth=1, relheight=1)
-                self.bg_label.lower()  # 放在最底层
-            else:
-                self.bg_label.place_forget()
-        else:
-            self.bg_label.place_forget()
+            try:
+                from ttkbootstrap import Style
+                style = Style()
+                style.theme_use(ttk_theme)
+            except Exception as e:
+                print(f"主题切换失败: {e}")
 
         # 更新进度条
         self._draw_progress(self.progress_var.get())
