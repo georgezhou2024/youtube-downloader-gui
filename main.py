@@ -66,10 +66,9 @@ class DownloaderApp:
         url_frame = ttk.LabelFrame(main, text="视频链接", padding=10)
         url_frame.pack(fill=tk.X, pady=(0, 10))
 
-        self.url_var = tk.StringVar()
+        self.url_var = tk.StringVar(value="粘贴 YouTube / B站 / 全网视频链接...")
         self.url_entry = ttk.Entry(url_frame, textvariable=self.url_var, font=("Microsoft YaHei UI", 11))
         self.url_entry.pack(fill=tk.X, ipady=5)
-        self.url_entry.insert(0, "粘贴 YouTube / B站 / 全网视频链接...")
         self.url_entry.bind("<FocusIn>", lambda e: self._clear_placeholder())
 
         # 选项区
@@ -129,8 +128,8 @@ class DownloaderApp:
         scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
 
     def _clear_placeholder(self):
-        if self.url_entry.get() == "粘贴 YouTube / B站 / 全网视频链接...":
-            self.url_entry.delete(0, tk.END)
+        if self.url_var.get() == "粘贴 YouTube / B站 / 全网视频链接...":
+            self.url_var.set("")
 
     def _on_format_change(self):
         pass
@@ -268,7 +267,9 @@ class DownloaderApp:
 def main():
     if HAS_BOOTSTRAP:
         style = Style(theme="litera")
-    root = tk.Tk()
+        root = style.master
+    else:
+        root = tk.Tk()
     app = DownloaderApp(root)
     root.mainloop()
 
