@@ -20,7 +20,7 @@ except ImportError:
     HAS_BOOTSTRAP = False
 
 APP_NAME = "YouTube 下载器"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 
 # 资源路径（打包后兼容：优先从 exe 同目录找，找不到再从打包临时目录找）
 def resource_path(relative_path):
@@ -97,14 +97,49 @@ class DownloaderApp:
         if result:
             webbrowser.open(release_url)
 
+    def _manual_check_update(self):
+        """手动检查更新"""
+        self._log("正在检查更新...")
+        try:
+            api_url = "https://api.github.com/repos/georgezhou2024/youtube-downloader-gui/releases/latest"
+            req = urllib.request.Request(api_url, headers={"User-Agent": "YouTube-Downloader"})
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode())
+            latest_version = data.get("tag_name", "").lstrip("v")
+            release_url = data.get("html_url", "")
+
+            if self._compare_version(latest_version, APP_VERSION) > 0:
+                self._log(f"发现新版本 v{latest_version}")
+                result = messagebox.askyesno(
+                    "发现新版本",
+                    f"当前版本: v{APP_VERSION}\n最新版本: v{latest_version}\n\n是否前往下载？"
+                )
+                if result:
+                    webbrowser.open(release_url)
+            else:
+                self._log(f"当前已是最新版本 v{APP_VERSION}")
+                messagebox.showinfo("检查更新", f"当前已是最新版本 v{APP_VERSION}")
+        except Exception as e:
+            self._log(f"检查更新失败: {e}")
+            messagebox.showerror("检查更新", f"检查失败: {e}")
+
     def _build_ui(self):
         # 主容器
         main = ttk.Frame(self.root, padding=20)
         main.pack(fill=tk.BOTH, expand=True)
 
-        # 标题
-        title_label = ttk.Label(main, text="YouTube 视频下载器", font=("Microsoft YaHei UI", 16, "bold"))
-        title_label.pack(anchor=tk.W, pady=(0, 15))
+        # 标题栏（左标题 + 右版本号/检查更新）
+        header = ttk.Frame(main)
+        header.pack(fill=tk.X, pady=(0, 15))
+
+        title_label = ttk.Label(header, text="YouTube 视频下载器", font=("Microsoft YaHei UI", 16, "bold"))
+        title_label.pack(side=tk.LEFT)
+
+        version_label = ttk.Label(header, text=f"v{APP_VERSION}", foreground="#888", font=("Microsoft YaHei UI", 10))
+        version_label.pack(side=tk.RIGHT, padx=(5, 0))
+
+        check_btn = ttk.Button(header, text="检查更新", command=self._manual_check_update)
+        check_btn.pack(side=tk.RIGHT, padx=(0, 10))
 
         # URL 输入区
         url_frame = ttk.LabelFrame(main, text="视频链接", padding=10)
@@ -154,18 +189,18 @@ class DownloaderApp:
         progress_frame.pack(fill=tk.X, pady=(0, 10))
 
         self.progress_var = tk.DoubleVar(value=0)
-        self.progress_bar = ttk.Progressbar(progress_frame, variable=self.progress_var, maximum=100)
+        self.progress_bar = ttk.Progressbar(progress_frame, variable=self.progress_var, maximum=100, style="success.Horizontal.TProgressbar")
         self.progress_bar.pack(fill=tk.X, ipady=3)
 
         self.status_var = tk.StringVar(value="就绪")
-        status_label = ttk.Label(progress_frame, textvariable=self.status_var, foreground="#666")
+        status_label = ttk.Label(progress_frame, textvariable=self.status_var, foreground="#aaa")
         status_label.pack(anchor=tk.W, pady=(5, 0))
 
         # 日志区
         log_frame = ttk.LabelFrame(main, text="日志", padding=10)
         log_frame.pack(fill=tk.BOTH, expand=True)
 
-        self.log_text = tk.Text(log_frame, height=8, wrap=tk.WORD, font=("Consolas", 9), state=tk.DISABLED, bg="#f8f8f8")
+        self.log_text = tk.Text(log_frame, height=8, wrap=tk.WORD, font=("Consolas", 9), state=tk.DISABLED, bg="#1e1e1e", fg="#d4d4d4", insertbackground="#d4d4d4")
         scrollbar = ttk.Scrollbar(log_frame, command=self.log_text.yview)
         self.log_text.configure(yscrollcommand=scrollbar.set)
         self.log_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
@@ -253,13 +288,13 @@ class DownloaderApp:
             cmd = self._build_command(url)
             self._log("执行: " + " ".join(cmd))
 
-            # 用 Popen 实时读取输出
+            # 用 Popen 实时读取输出（yt-dlp 在 Windows 输出 GBK 编码）
             self.process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.STDOUT,
                 text=True,
-                encoding="utf-8",
+                encoding="gbk",
                 errors="replace",
                 creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0
             )
@@ -310,7 +345,7 @@ class DownloaderApp:
 
 def main():
     if HAS_BOOTSTRAP:
-        style = Style(theme="litera")
+        style = Style(theme="darkly")
         root = style.master
     else:
         root = tk.Tk()
