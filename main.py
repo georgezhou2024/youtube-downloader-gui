@@ -20,7 +20,7 @@ except ImportError:
     HAS_BOOTSTRAP = False
 
 APP_NAME = "YouTube 下载器"
-APP_VERSION = "1.3.0"
+APP_VERSION = "1.4.0"
 
 # 资源路径（打包后兼容：优先从 exe 同目录找，找不到再从打包临时目录找）
 def resource_path(relative_path):
@@ -138,6 +138,13 @@ class DownloaderApp:
         version_label = ttk.Label(header, text=f"v{APP_VERSION}", foreground="#888", font=("Microsoft YaHei UI", 10))
         version_label.pack(side=tk.RIGHT, padx=(5, 0))
 
+        ttk.Label(header, text="皮肤：").pack(side=tk.RIGHT, padx=(0, 3))
+        self.theme_var = tk.StringVar(value="暗黑")
+        theme_combo = ttk.Combobox(header, textvariable=self.theme_var,
+            values=["暗黑", "白色", "蓝色", "绿色", "红色"], state="readonly", width=6, font=("Microsoft YaHei UI", 9))
+        theme_combo.pack(side=tk.RIGHT, padx=(0, 10))
+        theme_combo.bind("<<ComboboxSelected>>", lambda e: self._switch_theme())
+
         check_btn = ttk.Button(header, text="检查更新", command=self._manual_check_update)
         check_btn.pack(side=tk.RIGHT, padx=(0, 10))
 
@@ -233,7 +240,15 @@ class DownloaderApp:
             self.resolution_combo.configure(state="readonly")
 
     def _draw_progress(self, pct):
-        """画绿色渐变进度条 + 百分比文字"""
+        """画绿色渐变进度条 + 百分比文字（节流防闪烁）"""
+        self.progress_var.set(pct)
+        # 用 after 节流，最多每 100ms 重绘一次
+        if hasattr(self, '_progress_after_id'):
+            self.root.after_cancel(self._progress_after_id)
+        self._progress_after_id = self.root.after(50, lambda: self._do_draw(pct))
+
+    def _do_draw(self, pct):
+        """实际绘制进度条"""
         self.progress_canvas.delete("all")
         w = self.progress_canvas.winfo_width()
         if w < 10:
@@ -241,27 +256,39 @@ class DownloaderApp:
         h = 36
         fill_w = int(w * pct / 100)
 
-        # 背景
         self.progress_canvas.create_rectangle(0, 0, w, h, fill="#3c3c3f", outline="")
 
-        # 绿色渐变填充（用多段矩形模拟渐变）
         if fill_w > 0:
             steps = 20
             for i in range(steps):
                 x0 = int(fill_w * i / steps)
                 x1 = int(fill_w * (i + 1) / steps)
-                # 从浅绿到深绿渐变
                 r = int(60 + i * 3)
                 g = int(180 + i * 2)
                 b = int(80 - i * 2)
                 color = f"#{r:02x}{g:02x}{b:02x}"
                 self.progress_canvas.create_rectangle(x0, 0, x1, h, fill=color, outline="")
 
-        # 百分比文字
         text = f"{pct:.1f}%" if pct > 0 else ""
         if text:
             self.progress_canvas.create_text(w // 2, h // 2, text=text, fill="white",
                                             font=("Microsoft YaHei UI", 12, "bold"))
+
+    def _switch_theme(self):
+        """切换主题皮肤"""
+        theme_map = {
+            "暗黑": "darkly",
+            "白色": "litera",
+            "蓝色": "cosmo",
+            "绿色": "flatly",
+            "红色": "pulse"
+        }
+        theme = theme_map.get(self.theme_var.get(), "darkly")
+        if HAS_BOOTSTRAP:
+            from ttkbootstrap import Style
+            style = Style(theme=theme)
+            # 更新进度条颜色
+            self._draw_progress(self.progress_var.get())
 
     def _open_output_folder(self):
         """打开输出文件夹"""
@@ -291,21 +318,16 @@ class DownloaderApp:
 
         cmd = [ytdlp, "--no-playlist", "--newline", "--concurrent-fragments", "5"]
 
-        if self.format_var.get() == "mp3":
+        if self.format_var.get() == "mp3" or getattr(self, "_selected_quality", "") == "audio":
             cmd.extend(["-x", "--audio-format", "mp3", "--audio-quality", "0"])
         else:
-            # 根据分辨率选择格式
-            res = self.resolution_var.get()
-            if res == "2160p (4K)":
-                fmt = "bestvideo[height<=2160][ext=mp4]+bestaudio[ext=m4a]/best[height<=2160]/best"
-            elif res == "1440p (2K)":
-                fmt = "bestvideo[height<=1440][ext=mp4]+bestaudio[ext=m4a]/best[height<=1440]/best"
-            elif res == "1080p":
-                fmt = "bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080]/best"
-            elif res == "720p":
-                fmt = "bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[height<=720]/best"
-            elif res == "480p":
-                fmt = "bestvideo[height<=480][ext=mp4]+bestaudio[ext=m4a]/best[height<=480]/best"
+            # 根据用户选择的分辨率
+            q = getattr(self, "_selected_quality", "best")
+            if q == "best":
+                fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
+            elif q and q.isdigit():
+                h = int(q)
+                fmt = f"bestvideo[height<={h}][ext=mp4]+bestaudio[ext=m4a]/best[height<={h}]/best"
             else:
                 fmt = "bestvideo[ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best"
             cmd.extend(["-f", fmt, "--merge-output-format", "mp4"])
@@ -329,6 +351,115 @@ class DownloaderApp:
             messagebox.showerror("错误", "保存位置不存在，请重新选择")
             return
 
+        # mp4 模式：先获取视频信息，弹窗选分辨率
+        if self.format_var.get() == "mp4":
+            self.status_var.set("正在获取视频信息...")
+            self._log("正在获取视频信息...")
+            threading.Thread(target=self._fetch_and_show_quality, args=(url,), daemon=True).start()
+        else:
+            self._do_download(url, self.resolution_var.get())
+
+    def _fetch_and_show_quality(self, url):
+        """获取视频信息并弹出分辨率选择窗口"""
+        try:
+            ytdlp = resource_path("yt-dlp.exe")
+            if not os.path.exists(ytdlp):
+                ytdlp = "yt-dlp"
+
+            # 获取视频信息 JSON
+            cmd = [ytdlp, "-J", "--no-playlist", url]
+            result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
+                                    errors="replace", creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
+            if result.returncode != 0:
+                self.root.after(0, lambda: messagebox.showerror("错误", f"获取视频信息失败:\n{result.stderr[:200]}"))
+                return
+
+            info = json.loads(result.stdout)
+            title = info.get("title", "未知标题")
+            duration = info.get("duration", 0)
+            formats = info.get("formats", [])
+
+            # 提取视频格式（有高度的）
+            video_formats = []
+            seen_res = set()
+            for f in formats:
+                h = f.get("height")
+                if h and h not in seen_res:
+                    seen_res.add(h)
+                    size = f.get("filesize") or f.get("filesize_approx") or 0
+                    ext = f.get("ext", "mp4")
+                    vcodec = f.get("vcodec", "")[:12]
+                    video_formats.append({"height": h, "size": size, "ext": ext, "vcodec": vcodec})
+            video_formats.sort(key=lambda x: x["height"], reverse=True)
+
+            # 在主线程弹窗
+            self.root.after(0, lambda: self._show_quality_dialog(url, title, duration, video_formats))
+
+        except Exception as e:
+            self.root.after(0, lambda: messagebox.showerror("错误", f"获取视频信息失败: {e}"))
+
+    def _show_quality_dialog(self, url, title, duration, formats):
+        """显示分辨率选择窗口"""
+        dlg = tk.Toplevel(self.root)
+        dlg.title("选择分辨率")
+        dlg.geometry("520x560")
+        dlg.transient(self.root)
+        dlg.grab_set()
+
+        # 标题
+        ttk.Label(dlg, text=title, font=("Microsoft YaHei UI", 12, "bold"), wraplength=480).pack(anchor=tk.W, padx=15, pady=(15, 5))
+        mins = duration // 60 if duration else 0
+        secs = duration % 60 if duration else 0
+        ttk.Label(dlg, text=f"时长: {mins}:{secs:02d}", foreground="#888").pack(anchor=tk.W, padx=15)
+
+        # 滚动列表
+        canvas = tk.Canvas(dlg, bg="#2d2d30", highlightthickness=0)
+        scrollbar = ttk.Scrollbar(dlg, orient="vertical", command=canvas.yview)
+        frame = ttk.Frame(canvas)
+        frame.bind("<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all")))
+        canvas.create_window((0, 0), window=frame, anchor="nw")
+        canvas.configure(yscrollcommand=scrollbar.set)
+        canvas.pack(side="left", fill="both", expand=True, padx=(15, 0), pady=10)
+        scrollbar.pack(side="right", fill="y")
+
+        selected = tk.StringVar(value="best")
+
+        # 最高画质选项
+        rb = ttk.Radiobutton(frame, text="最高画质（自动合并音视频）", variable=selected, value="best")
+        rb.pack(anchor=tk.W, pady=5)
+        ttk.Label(frame, text="推荐 · bestvideo+bestaudio", foreground="#888").pack(anchor=tk.W, padx=20)
+
+        ttk.Separator(frame).pack(fill="x", pady=8)
+
+        # 各分辨率选项
+        max_h = max(f["height"] for f in formats) if formats else 1080
+        for f in formats:
+            h = f["height"]
+            size_mb = f["size"] / 1024 / 1024 if f["size"] else 0
+            size_str = f"{size_mb:.1f} MB" if size_mb < 1024 else f"{size_mb/1024:.2f} GB"
+            text = f"{h}p"
+            sub = f"{f['ext']} · {f['vcodec']} · {size_str}"
+            rb = ttk.Radiobutton(frame, text=text, variable=selected, value=str(h))
+            rb.pack(anchor=tk.W, pady=3)
+            ttk.Label(frame, text=sub, foreground="#888").pack(anchor=tk.W, padx=20)
+
+        # 仅音频
+        ttk.Separator(frame).pack(fill="x", pady=8)
+        ttk.Radiobutton(frame, text="仅音频 (MP3)", variable=selected, value="audio").pack(anchor=tk.W, pady=3)
+
+        # 底部按钮
+        btn_frame = ttk.Frame(dlg)
+        btn_frame.pack(fill="x", padx=15, pady=10)
+        ttk.Button(btn_frame, text="取消", command=dlg.destroy).pack(side="right", padx=(5, 0))
+        ttk.Button(btn_frame, text="下载", style="Accent.TButton",
+                   command=lambda: self._on_quality_selected(dlg, url, selected.get())).pack(side="right")
+
+    def _on_quality_selected(self, dlg, url, quality):
+        dlg.destroy()
+        self._do_download(url, quality)
+
+    def _do_download(self, url, quality):
+        """实际开始下载"""
         self.is_downloading = True
         self.download_btn.configure(state=tk.DISABLED)
         self.cancel_btn.configure(state=tk.NORMAL)
@@ -336,7 +467,10 @@ class DownloaderApp:
         self._draw_progress(0)
         self.status_var.set("正在下载...")
         self._log(f"开始下载: {url}")
-        self._log(f"格式: {self.format_var.get().upper()}, 保存到: {self.path_var.get()}")
+        self._log(f"格式: {self.format_var.get().upper()}, 分辨率: {quality}, 保存到: {self.path_var.get()}")
+
+        # 把用户选的分辨率存起来
+        self._selected_quality = quality
 
         thread = threading.Thread(target=self._download_worker, args=(url,), daemon=True)
         thread.start()
