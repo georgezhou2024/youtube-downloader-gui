@@ -351,7 +351,9 @@ class DownloaderApp:
         if not os.path.exists(ytdlp):
             ytdlp = "yt-dlp"
 
-        cmd = [ytdlp, "--no-playlist", "--newline", "--concurrent-fragments", "5"]
+        cmd = [ytdlp, "--no-playlist", "--newline", "--concurrent-fragments", "5",
+               "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+               "--extractor-args", "youtube:player_client=web"]
 
         if self.format_var.get() == "mp3" or getattr(self, "_selected_quality", "") == "audio":
             cmd.extend(["-x", "--audio-format", "mp3", "--audio-quality", "0"])
@@ -397,7 +399,7 @@ class DownloaderApp:
             self._log("正在获取视频信息...")
             threading.Thread(target=self._fetch_and_show_quality, args=(url,), daemon=True).start()
         else:
-            self._do_download(url, self.resolution_var.get())
+            self._do_download(url, "audio")
 
     def _fetch_and_show_quality(self, url):
         """获取视频信息并弹出分辨率选择窗口"""
