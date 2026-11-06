@@ -26,7 +26,7 @@ except ImportError:
     HAS_BOOTSTRAP = False
 
 APP_NAME = "YouTube 下载器"
-APP_VERSION = "1.6.1"
+APP_VERSION = "1.6.2"
 
 # 资源路径（打包后兼容：优先从 exe 同目录找，找不到再从打包临时目录找）
 def resource_path(relative_path):
@@ -377,6 +377,9 @@ class DownloaderApp:
         return cmd
 
     def _start_download(self):
+        if self.is_downloading:
+            return
+
         url = self.url_var.get().strip()
         if not url or url == "粘贴 YouTube / B站 / 全网视频链接...":
             messagebox.showwarning("提示", "请先粘贴视频链接")
@@ -388,6 +391,8 @@ class DownloaderApp:
 
         # mp4 模式：先获取视频信息，弹窗选分辨率
         if self.format_var.get() == "mp4":
+            self.is_downloading = True
+            self.download_btn.configure(state=tk.DISABLED)
             self.status_var.set("正在获取视频信息...")
             self._log("正在获取视频信息...")
             threading.Thread(target=self._fetch_and_show_quality, args=(url,), daemon=True).start()
@@ -519,8 +524,14 @@ class DownloaderApp:
         tk.Button(bottom, text="下载", font=("Microsoft YaHei UI", 10, "bold"), bg="#1a73e8", fg="white",
                   relief="flat", padx=20, pady=5, cursor="hand2",
                   command=lambda: self._on_quality_selected(dlg, url, selected.get())).pack(side="right", padx=(8, 0))
+        def on_cancel():
+            dlg.destroy()
+            self.is_downloading = False
+            self.download_btn.configure(state=tk.NORMAL)
+            self.status_var.set("已取消")
+            self._log("=== 用户取消分辨率选择 ===")
         tk.Button(bottom, text="取消", font=("Microsoft YaHei UI", 10), bg="white", relief="solid", bd=1,
-                  padx=15, pady=5, cursor="hand2", command=dlg.destroy).pack(side="right")
+                  padx=15, pady=5, cursor="hand2", command=on_cancel).pack(side="right")
 
     def _on_quality_selected(self, dlg, url, quality):
         dlg.destroy()
