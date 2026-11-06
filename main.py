@@ -353,7 +353,8 @@ class DownloaderApp:
 
         cmd = [ytdlp, "--no-playlist", "--newline", "--concurrent-fragments", "5",
                "--user-agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-               "--extractor-args", "youtube:player_client=web"]
+               "--extractor-args", "youtube:player_client=web",
+               "--cookies-from-browser", "chrome"]
 
         if self.format_var.get() == "mp3" or getattr(self, "_selected_quality", "") == "audio":
             cmd.extend(["-x", "--audio-format", "mp3", "--audio-quality", "0"])
@@ -409,7 +410,7 @@ class DownloaderApp:
                 ytdlp = "yt-dlp"
 
             # 获取视频信息 JSON
-            cmd = [ytdlp, "-J", "--no-playlist", url]
+            cmd = [ytdlp, "-J", "--no-playlist", "--cookies-from-browser", "chrome", url]
             result = subprocess.run(cmd, capture_output=True, text=True, encoding="utf-8",
                                     errors="replace", creationflags=subprocess.CREATE_NO_WINDOW if sys.platform == "win32" else 0)
             if result.returncode != 0:
